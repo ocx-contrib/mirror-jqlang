@@ -1,0 +1,123 @@
+extends: ../mirror-base.yml
+
+name: jq
+
+# Logical index package `jqlang/jq` at the physical path
+# `ghcr.io/ocx-contrib/jqlang/jq` — slash segments, never hyphen-flattened. The
+# first segment must be this repo's own GitHub owner: GITHUB_TOKEN only
+# authorises packages owned by the repo the workflow runs in.
+#
+# Succeeds the flat `ocx.sh/jq` coordinate this repository published before the
+# grouped layout, the same way mirror-kitware/cmake succeeds mirror-cmake.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/jqlang/jq
+
+source:
+  type: github_release
+  owner: jqlang
+  repo: jq
+  # Tags: jq-1.7, jq-1.7.1, jq-1.8.0, jq-1.8.1, jq-1.8.2. Optional third digit
+  # (1.7 has none). Prereleases (jq-1.7rc1) are excluded by skip_prereleases.
+  tag_pattern: "^jq-(?P<version>\\d+\\.\\d+(\\.\\d+)?)$"
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# Upstream ships ONE Linux build per arch and it is fully static. Measured on
+# jq-1.8.2:
+#
+#   $ file jq-linux-amd64
+#   ELF 64-bit LSB executable, x86-64, statically linked, BuildID[sha1]=…,
+#   for GNU/Linux 3.2.0, stripped
+#   $ readelf -l … | grep INTERP  → (none)
+#   $ readelf -d … | grep NEEDED  → (none)
+#   $ file jq-linux-arm64
+#   ELF 64-bit LSB executable, ARM aarch64, statically linked, …
+#
+# No PT_INTERP and no DT_NEEDED means the artifact requires nothing of the
+# host, so both Linux keys are BARE — no `+libc.*` suffix. Upstream publishes
+# no -musl / -alpine variant, so there is no counterpart to split against.
+# Container legs (ubuntu + alpine + fedora) live in ../mirror-base.yml and are
+# what turn that claim into evidence.
+#
+# ─── Scope (verified against every tag the pattern matches: 1.7 … 1.8.2) ────
+#
+# jq ships raw, statically linked binaries — no archive. Upstream also
+# publishes, and this mirror deliberately does not carry:
+#   jq-linux-{i386,armel,armhf,mips*,powerpc,ppc64el,riscv64,s390x}  — no runner
+#   jq-linux32 / jq-linux64 / jq-osx-amd64 / jq-win32.exe / jq-win64.exe
+#                                             — legacy pre-1.7 asset names
+#   jq-windows-i386.exe                       — no GHA runner
+#   jq-<v>.tar.gz / .zip, sha256sum.txt, jq-attestation.json — source, sidecars
+#
+# The anchored ^…$ regexes are what keep those out — `^jq-linux-amd64$` does
+# not match `jq-linux-amd64.tar.gz`, and nothing matches the legacy `jq-linux64`
+# or `jq-osx-amd64`. Resolution verified BOTH ways across all five releases the
+# tag pattern matches (1.7, 1.7.1, 1.8.0, 1.8.1, 1.8.2): each of the five
+# patterns matches EXACTLY one asset in each. A pattern matching zero is
+# silently skipped, not an error — it would yield a green run with a missing
+# platform, which is precisely why windows/arm64 is not declared
+# (`jq-windows-arm64.exe` exists only from 1.8.2 onward).
+assets:
+  linux/amd64:
+    - "^jq-linux-amd64$"
+  linux/arm64:
+    - "^jq-linux-arm64$"
+  darwin/amd64:
+    - "^jq-macos-amd64$"
+  darwin/arm64:
+    - "^jq-macos-arm64$"
+  windows/amd64:
+    - "^jq-windows-amd64\\.exe$"
+
+asset_type:
+  # Raw binary on every platform — no archive to unpack. Renamed to `jq`
+  # (jq.exe on Windows; the .exe is appended automatically when the downloaded
+  # asset carries it), so one metadata file serves all five platforms.
+  type: binary
+  name: jq
+
+metadata:
+  default: metadata.json
+
+catalog:
+  logo: logo.svg
+
+versions:
+  # Carried over unchanged from the flat layout — but note what it actually
+  # admits, measured with `pipeline plan` on 2026-08-02:
+  #
+  #   min: "1.7"    → 1.8.0, 1.8.1, 1.8.2
+  #   min: "1.7.0"  → 1.7.1, 1.8.0, 1.8.1, 1.8.2
+  #   min: "1.0"    → 1.7.1, 1.8.0, 1.8.1, 1.8.2   (same as 1.7.0)
+  #
+  # Two facts the flat layout's comment had backwards. First, the `jq-1.7` tag
+  # is NOT reachable at any floor: its two-component version never survives
+  # discovery, so no floor can pull it in. Second, the bare "1.7" floor is
+  # STRICTER than "1.7.0", not looser — it excludes jq-1.7.1, which does carry
+  # all five modern assets. Lowering the floor to "1.7.0" is the one-line
+  # change that would add it; left as-is so this port stays layout-only.
+  min: "1.7"
+  new_per_run: 5
+  poll_interval: "0 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: jq/tests/smoke.star
+
+annotations:
+  # From the Phase 1.5 license gate. GitHub's license API answers NOASSERTION
+  # because upstream's file is named COPYING and appends a CC BY 3.0 grant for
+  # docs/ — the software terms themselves are the MIT text verbatim
+  # ("jq is copyright (C) 2012 Stephen Dolan"), which is what the mirrored
+  # binaries carry. Verified by reading
+  # <https://github.com/jqlang/jq/blob/master/COPYING>.
+  org.opencontainers.image.licenses: "MIT"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: jqlang/jq
+  fork: ocx-contrib/index
