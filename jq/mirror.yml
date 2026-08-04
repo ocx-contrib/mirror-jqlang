@@ -99,7 +99,7 @@ versions:
   # change that would add it; left as-is so this port stays layout-only.
   min: "1.7"
   new_per_run: 5
-  poll_interval: "0 */6 * * *"
+  poll_interval: "29 3-23/6 * * *"
 
 tests:
   # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
